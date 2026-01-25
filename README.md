@@ -18,6 +18,7 @@ A Streamlit web application that computes required contact-center agents per int
 Offered load (Erlangs): $erlangs = \frac{volume \times aht\_seconds}{interval\_seconds}$
 
 Erlang-C search finds minimum agents $N$ meeting:
+
 - Service level target OR ASA target
 - Optional occupancy cap: $\frac{erlangs}{N} \leq occupancy\_target$
 
