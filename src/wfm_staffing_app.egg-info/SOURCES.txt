@@ -1,0 +1,16 @@
+README.md
+pyproject.toml
+setup.py
+src/wfm/erlangc.py
+src/wfm/io.py
+src/wfm/patterns.py
+src/wfm/staffing.py
+src/wfm/validation.py
+src/wfm_staffing_app.egg-info/PKG-INFO
+src/wfm_staffing_app.egg-info/SOURCES.txt
+src/wfm_staffing_app.egg-info/dependency_links.txt
+src/wfm_staffing_app.egg-info/requires.txt
+src/wfm_staffing_app.egg-info/top_level.txt
+tests/test_erlangc.py
+tests/test_staffing.py
+tests/test_validation.py

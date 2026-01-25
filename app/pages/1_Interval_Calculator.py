@@ -1,6 +1,6 @@
 import streamlit as st
 
-from staffing import StaffingInputs, compute_required_agents
+from wfm.staffing import StaffingInputs, compute_required_agents
 
 st.set_page_config(page_title="Interval Calculator", layout="wide")
 st.title("Single Interval Calculator")
@@ -37,7 +37,7 @@ inputs = StaffingInputs(
     aht_seconds=aht,
     interval_minutes=int(interval_minutes),
     is_open=is_open,
-    target_type=target_type,  # type: ignore
+    target_type=target_type,
     service_level_target=float(sl_target),
     service_level_time_seconds=float(sl_time),
     asa_target_seconds=float(asa_target),
@@ -62,4 +62,4 @@ c1.metric("Service Level", f"{result.achieved_service_level:.3f}")
 c2.metric("ASA (seconds)", f"{result.achieved_asa_seconds:.1f}")
 c3.metric("Occupancy", f"{result.achieved_occupancy:.3f}")
 
-st.caption("MVP uses Erlang-C. Abandonment is not modeled (add Erlang-A later if required).")
+st.caption("Note: Abandonment is not modeled in Erlang-C MVP. Add Erlang-A later if needed.")

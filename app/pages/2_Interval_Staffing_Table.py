@@ -1,7 +1,3 @@
-import io
-import pandas as pd
-import streamlit as st
-
 from wfm.io import read_interval_csv
 from wfm.validation import validate_intervals
 from wfm.staffing import StaffingInputs, compute_required_agents

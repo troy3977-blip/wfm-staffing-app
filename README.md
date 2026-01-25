@@ -31,7 +31,7 @@ FTE-hours per interval: $fte\_hours = scheduled \times \frac{interval\_minutes}{
 ```bash
 python -m venv .venv
 # Windows:
-#   .venv\Scripts\activate
+.venv\Scripts\activate
 # Mac/Linux:
 #   source .venv/bin/activate
 pip install -r requirements.txt
