@@ -1,4 +1,4 @@
-from src.wfm.staffing import StaffingInputs, compute_required_agents
+from wfm.staffing import StaffingInputs, compute_required_agents
 
 def test_closed_interval_returns_zero():
     inputs = StaffingInputs(volume=100, aht_seconds=300, interval_minutes=15, is_open=False)
