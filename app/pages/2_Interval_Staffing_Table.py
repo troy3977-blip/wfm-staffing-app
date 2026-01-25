@@ -2,10 +2,10 @@ import io
 import pandas as pd
 import streamlit as st
 
-from src.wfm.io import read_interval_csv
-from src.wfm.validation import validate_intervals
-from src.wfm.staffing import StaffingInputs, compute_required_agents
-from src.wfm.patterns import (
+from wfm.io import read_interval_csv
+from wfm.validation import validate_intervals
+from wfm.staffing import StaffingInputs, compute_required_agents
+from wfm.patterns import (
     HoursOfOperation,
     build_day_intervals,
     apply_hours_of_operation,

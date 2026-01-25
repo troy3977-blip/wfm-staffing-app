@@ -1,6 +1,6 @@
 import streamlit as st
 
-from src.wfm.staffing import StaffingInputs, compute_required_agents
+from staffing import StaffingInputs, compute_required_agents
 
 st.set_page_config(page_title="Interval Calculator", layout="wide")
 st.title("Single Interval Calculator")

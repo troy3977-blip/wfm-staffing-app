@@ -1,4 +1,4 @@
-from src.wfm.erlangc import offered_load_erlangs, erlang_c_probability_of_wait, service_level_erlang_c, asa_erlang_c
+from wfm.erlangc import offered_load_erlangs, erlang_c_probability_of_wait, service_level_erlang_c, asa_erlang_c
 
 def test_offered_load():
     a = offered_load_erlangs(volume=120, aht_seconds=300, interval_seconds=900)  # 15-min
