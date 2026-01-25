@@ -1,1 +1,1 @@
-__all__ = ["erlangc", "staffing", "io", "validation"]
+__all__ = ["erlangc", "staffing", "io", "validation", "patterns"]

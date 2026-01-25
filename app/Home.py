@@ -7,11 +7,13 @@ st.write(
     """
 This app computes **required agents per interval** using an Erlang-C staffing engine.
 
-**MVP scope included:**
+Included:
 - Single Interval Calculator
-- Interval Staffing Table (CSV upload → results → download)
-- Shrinkage and optional occupancy constraint
-- Hours-of-operation (is_open) masking
+- Interval Staffing Table (CSV upload or generate from daily total + pattern)
+- Shrinkage conversion (on-phone → scheduled)
+- Optional occupancy cap
+- Hours-of-operation masking + arrival patterns
+- Custom intraday profile CSV + profile builder
 """
 )
 

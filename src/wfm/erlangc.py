@@ -19,9 +19,9 @@ def erlang_c_probability_of_wait(a: float, n: int) -> float:
     Erlang C: probability that an arrival has to wait (delay probability).
     Stable only when n > a.
 
-    Uses a numerically stable recursion for the sum:
+    Uses a numerically stable recursion for:
       sum_{k=0}^{n-1} a^k / k!
-    and then:
+    Then:
       P(wait) = (a^n / n!)*(n/(n-a)) / [ sum_{k=0}^{n-1} a^k/k! + (a^n/n!)*(n/(n-a)) ]
     """
     if a < 0:
@@ -31,19 +31,16 @@ def erlang_c_probability_of_wait(a: float, n: int) -> float:
     if a == 0:
         return 0.0
     if n <= a:
-        # Unstable system; in practice you'd never staff at/below load.
-        return 1.0
+        return 1.0  # unstable / insufficient staffing
 
-    # Compute sum_{k=0}^{n-1} a^k/k! via recursion:
-    # term_k = a^k/k!
     term = 1.0
     s = term
     for k in range(1, n):
         term *= a / k
         s += term
 
-    # term now equals a^(n-1)/(n-1)!, so multiply one more time for a^n/n!
-    term *= a / n  # now a^n / n!
+    # term currently a^(n-1)/(n-1)!
+    term *= a / n  # now a^n/n!
     numerator = term * (n / (n - a))
     denom = s + numerator
     return float(numerator / denom)

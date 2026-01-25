@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pandas as pd
 
-
 REQUIRED_COLUMNS = ["interval_start", "interval_minutes", "volume", "aht_seconds", "is_open"]
 
 

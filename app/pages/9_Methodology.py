@@ -8,18 +8,24 @@ st.markdown(
 ### Key definitions
 
 - **Offered load (Erlangs)**:  
-  \n`erlangs = (volume * aht_seconds) / interval_seconds`
+  `erlangs = (volume * aht_seconds) / interval_seconds`
 
 - **Erlang-C staffing**:
-  Finds the minimum number of agents `N` such that:
-  - Service Level target is met (**SL(T)**) *or* ASA target is met
-  - Optional **occupancy cap** is satisfied: `erlangs / N <= occupancy_target`
+  Finds the minimum number of agents `N` meeting:
+  - Service Level target **or** ASA target
+  - Optional **occupancy cap**: `erlangs / N <= occupancy_target`
   - Interval closed → staffing is 0
 
 - **Shrinkage conversion**:
-  \n`scheduled = ceil(on_phone / (1 - shrinkage))`
+  `scheduled = ceil(on_phone / (1 - shrinkage))`
 
-### Notes
-- Abandonment is not modeled in Erlang-C MVP. Add Erlang-A later if you need abandonment modeling.
+- **FTE-hours per interval (output)**:
+  `fte_hours_interval = scheduled * (interval_minutes / 60)`
+
+### Arrival patterns (generated mode)
+You may allocate a daily total volume into interval volumes using:
+- Uniform / Ramp / Gaussian peak
+- Custom intraday profile CSV (time,weight)
+- Profile builder (template + bootstrap)
 """
 )
