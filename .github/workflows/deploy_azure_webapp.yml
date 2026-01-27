@@ -1,0 +1,83 @@
+name: Build & Deploy (Streamlit -> Azure Web App) via OIDC + Zip Deploy
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          # Ensure your local package (src/...) is importable in CI
+          pip install -e .
+
+      - name: Run tests
+        run: |
+          pytest -q
+
+      - name: Create deployment package
+        run: |
+          zip -r app.zip . \
+            -x "*.git*" \
+            -x "*__pycache__*" \
+            -x "*.pytest_cache*" \
+            -x ".venv/*" \
+            -x "venv/*" \
+            -x ".github/*"
+
+      # Auth to Azure WITHOUT publish profile
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # OPTIONAL: If you're using Key Vault references in App Settings, you can set them here.
+      # This requires:
+      # - Web App has System-assigned managed identity enabled
+      # - That identity granted "Key Vault Secrets User" on the Key Vault
+      - name: (Optional) Set App Settings (Key Vault references)
+        if: ${{ secrets.AZURE_KEYVAULT_URI != '' }}
+        run: |
+          az webapp config appsettings set \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ secrets.AZURE_WEBAPP_NAME }}" \
+            --settings \
+              KEYVAULT_URI="${{ secrets.AZURE_KEYVAULT_URI }}"
+          # Example KeyVault reference (uncomment and edit if you want):
+          # az webapp config appsettings set \
+          #   --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+          #   --name "${{ secrets.AZURE_WEBAPP_NAME }}" \
+          #   --settings \
+          #     MY_SECRET='@Microsoft.KeyVault(SecretUri=https://wfm-staff-app.vault.azure.net/secrets/kv-wfm-staff-app/1234567890abcdef'
+
+      # Deploy ZIP using ARM auth
+      - name: Deploy (Zip Deploy)
+        run: |
+          az webapp deploy \
+            --resource-group "${{ secrets.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ secrets.AZURE_WEBAPP_NAME }}" \
+            --src-path app.zip \
+            --type zip
