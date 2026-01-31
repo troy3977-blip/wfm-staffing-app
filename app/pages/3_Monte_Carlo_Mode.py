@@ -1,6 +1,8 @@
 # app/pages/3_Monte_Carlo_Mode.py
 from __future__ import annotations
 
+import hashlib
+import time
 from typing import cast
 
 import pandas as pd
@@ -15,6 +17,31 @@ from wfm.monte_carlo import (
     AHTDist,
 )
 from wfm.staffing import TargetType
+
+
+# -----------------------------
+# Helpers (cache + safety)
+# -----------------------------
+from io import StringIO
+
+def _df_fingerprint(df: pd.DataFrame) -> str:
+    tmp = df.copy()
+    if "interval_start" in tmp.columns:
+        tmp = tmp.sort_values("interval_start")
+    tmp = tmp.reset_index(drop=True)
+    b = tmp.to_csv(index=False).encode("utf-8")
+    return hashlib.sha256(b).hexdigest()
+
+@st.cache_data(show_spinner=False, ttl=900)
+def _cached_run_mc(
+    df_fingerprint: str,   # <-- forces stable key
+    df_csv: str,
+    cfg_kwargs: dict,
+    engine_kwargs: dict,
+) -> pd.DataFrame:
+    df = pd.read_csv(StringIO(df_csv))
+    cfg = MonteCarloConfig(**cfg_kwargs)
+    return run_interval_monte_carlo(interval_df=df, cfg=cfg, **engine_kwargs)
 
 
 # -----------------------------
@@ -38,7 +65,6 @@ Use it to answer questions like:
 """
 )
 
-
 # -----------------------------
 # Sidebar controls (inputs ONLY)
 # -----------------------------
@@ -47,9 +73,9 @@ with st.sidebar:
 
     n_sims_ui = st.slider(
         "Simulations per interval",
-        min_value=1,
+        min_value=200,
         max_value=int(MAX_SIMS_DEFAULT),
-        value=2000,
+        value=min(1000, int(MAX_SIMS_DEFAULT)),
         step=100,
         help=f"Hard-capped at {MAX_SIMS_DEFAULT} for production safety.",
     )
@@ -59,11 +85,11 @@ with st.sidebar:
     st.subheader("Uncertainty Model")
 
     simulate_volume = st.checkbox("Simulate Volume", value=True)
-    volume_dist = st.selectbox("Volume distribution", ["poisson", "normal", "lognormal"], index=0)
+    volume_dist_str = st.selectbox("Volume distribution", ["poisson", "normal", "lognormal"], index=0)
     volume_cv = st.slider("Volume CV (normal/lognormal only)", 0.05, 0.60, 0.15, 0.01)
 
     simulate_aht = st.checkbox("Simulate AHT", value=False)
-    aht_dist = st.selectbox("AHT distribution", ["lognormal", "normal"], index=0)
+    aht_dist_str = st.selectbox("AHT distribution", ["lognormal", "normal"], index=0)
     aht_cv = st.slider("AHT CV", 0.02, 0.60, 0.10, 0.01)
 
     st.divider()
@@ -71,10 +97,13 @@ with st.sidebar:
 
     target_type = cast(TargetType, st.selectbox("Target type", ["service_level", "asa"], index=0))
 
-    # Defaults
     service_level_target = 0.80
     service_level_time_seconds = 60.0
     asa_target_seconds = 30.0
+
+    if st.sidebar.button("Clear Monte Carlo cache"):
+        st.cache_data.clear()
+        st.sidebar.success("Cache cleared.")
 
     if target_type == "service_level":
         service_level_target = st.slider("Service Level target", 0.50, 0.99, 0.80, 0.01)
@@ -84,11 +113,8 @@ with st.sidebar:
             value=60.0,
             step=1.0,
         )
-        asa_target_seconds = 30.0
     else:
         asa_target_seconds = st.number_input("ASA target (seconds)", min_value=1.0, value=30.0, step=1.0)
-        service_level_target = 0.80
-        service_level_time_seconds = 60.0
 
     shrinkage = st.slider("Shrinkage", 0.00, 0.70, 0.30, 0.01)
 
@@ -96,8 +122,7 @@ with st.sidebar:
     occupancy_target = None
     if use_occ:
         occupancy_target = st.slider("Occupancy cap", 0.50, 0.98, 0.85, 0.01)
-
-
+     
 # -----------------------------
 # Load interval data
 # -----------------------------
@@ -118,8 +143,7 @@ if df is None:
     st.info("Run the Interval Staffing Table page first (so `intervals_df` exists), or upload a CSV.")
     st.stop()
 
-
-# Normalize expected columns (defensive)
+# Normalize expected columns
 try:
     required_cols = {"interval_start", "interval_minutes", "volume", "aht_seconds", "is_open"}
     missing = required_cols - set(df.columns)
@@ -152,42 +176,59 @@ except Exception as e:
 
 st.dataframe(df, use_container_width=True)
 
-
 # -----------------------------
-# Run Monte Carlo
+# Safety controls (Steps 2,4,5)
 # -----------------------------
-run = st.button("Run Monte Carlo", type="primary")
-MAX_SIMS_DEFAULT = 150_000  # ensure consistent with wfm.monte_carlo
-n_intervals = len(df)
+if "mc_running" not in st.session_state:
+    st.session_state["mc_running"] = False
 
-if n_sims > MAX_N_SIMS:
-    st.error(f"n_sims too high. Max allowed is {MAX_N_SIMS}.")
-    st.stop()
+# Simple per-session rate limiting (Step 5)
+COOLDOWN_SECONDS = 10
+MAX_RUNS_PER_SESSION = 20
 
-if n_intervals * n_sims > MAX_TOTAL_SIMS:
-    st.error(
-        f"Request too large: intervals({n_intervals}) * sims({n_sims}) = {n_intervals*n_sims:,} "
-        f"exceeds max {MAX_TOTAL_SIMS:,}. Increase interval size or reduce sims."
-    )
-    st.stop()
+run = st.button("Run Monte Carlo", type="primary", disabled=st.session_state.get("mc_running", False))
 
 if run:
-    # Apply UI cap (and engine also enforces MAX_SIMS_DEFAULT)
-    n_sims = min(int(n_sims_ui), int(MAX_SIMS_DEFAULT))
+    now = time.time()
+    last = float(st.session_state.get("mc_last_run", 0.0))
+    runs = int(st.session_state.get("mc_run_count", 0))
 
-    cfg = MonteCarloConfig(
-        n_sims=n_sims,
-        seed=int(seed),
-        volume_dist=cast(VolumeDist, str(volume_dist)),
-        volume_cv=float(volume_cv),
-        aht_dist=cast(AHTDist, str(aht_dist)),
-        aht_cv=float(aht_cv),
-    )
+    if runs >= MAX_RUNS_PER_SESSION:
+        st.error("Run limit reached for this session. Please refresh later.")
+        st.stop()
 
-    with st.spinner("Simulating..."):
-        out = run_interval_monte_carlo(
-            interval_df=df,
-            cfg=cfg,
+    if now - last < COOLDOWN_SECONDS:
+        st.warning(f"Please wait {int(COOLDOWN_SECONDS - (now - last))}s before running again.")
+        st.stop()
+
+    # lock UI (Step 4)
+    st.session_state["mc_running"] = True
+    st.session_state["mc_last_run"] = now
+    st.session_state["mc_run_count"] = runs + 1
+
+    try:
+        # Step 2: hard caps
+        n_sims = int(min(int(n_sims_ui), int(MAX_SIMS_DEFAULT)))
+        n_intervals = int(len(df))
+        total_work = n_intervals * n_sims
+
+        if total_work > int(MAX_TOTAL_SIMS):
+            st.error(
+                f"Request too large: intervals({n_intervals}) * sims({n_sims}) = {total_work:,} "
+                f"exceeds max {MAX_TOTAL_SIMS:,}. Increase interval size or reduce sims."
+            )
+            st.stop()
+
+        cfg_kwargs = dict(
+            n_sims=n_sims,
+            seed=int(seed),
+            volume_dist=cast(VolumeDist, str(volume_dist_str)),
+            volume_cv=float(volume_cv),
+            aht_dist=cast(AHTDist, str(aht_dist_str)),
+            aht_cv=float(aht_cv),
+        )
+
+        engine_kwargs = dict(
             simulate_volume=bool(simulate_volume),
             simulate_aht=bool(simulate_aht),
             target_type=target_type,
@@ -198,58 +239,84 @@ if run:
             occupancy_target=float(occupancy_target) if occupancy_target is not None else None,
         )
 
-    st.session_state["mc_results_df"] = out
+        # Step 3: cache
+df_csv = df.to_csv(index=False)
+df_key = _df_fingerprint(df)
 
-    if "interval_start" in out.columns and "scheduled_p90" in out.columns:
-        st.session_state["mc_p90_recommendations"] = out[["interval_start", "scheduled_p90"]].rename(
-            columns={"scheduled_p90": "recommended_scheduled_p90"}
+out = _cached_run_mc(
+    df_fingerprint=df_key,
+    df_csv=df_csv,
+    cfg_kwargs=cfg_kwargs,
+    engine_kwargs=engine_kwargs,
+)
+
+t0 = time.time()
+out = _cached_run_mc(
+    df_fingerprint=df_key,
+    df_csv=df_csv,
+    cfg_kwargs=cfg_kwargs,
+    engine_kwargs=engine_kwargs,
+)
+
+elapsed = time.time() - t0
+st.caption(f"Monte Carlo returned in {elapsed:.2f}s (near-zero means cached).")
+
+        if "interval_start" in out.columns and "scheduled_p90" in out.columns:
+            st.session_state["mc_p90_recommendations"] = out[["interval_start", "scheduled_p90"]].rename(
+                columns={"scheduled_p90": "recommended_scheduled_p90"}
+            )  
+          
+        # -----------------------------
+        # Display results
+        # -----------------------------
+        st.subheader("Monte Carlo Results")
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Intervals", f"{len(out)}")
+        c2.metric("Sims / Interval", f"{n_sims}")
+        c3.metric("Scheduled P90 Total", f"{out['scheduled_p90'].sum():.1f}" if "scheduled_p90" in out.columns else "—")
+        c4.metric("Scheduled P95 Total", f"{out['scheduled_p95'].sum():.1f}" if "scheduled_p95" in out.columns else "—")
+
+        st.caption("Percentiles are per-interval. Totals are simple sums across intervals (quick comparison metric).")
+
+        show_cols = [
+            "interval_start",
+            "interval_minutes",
+            "volume",
+            "aht_seconds",
+            "scheduled_mean",
+            "scheduled_p50",
+            "scheduled_p90",
+            "scheduled_p95",
+            "on_phone_mean",
+            "on_phone_p50",
+            "on_phone_p90",
+            "on_phone_p95",
+            "sla_breach_rate",
+            "asa_mean",
+            "occ_mean",
+        ]
+        show_cols = [c for c in show_cols if c in out.columns]
+        st.dataframe(out[show_cols], use_container_width=True)
+
+        st.download_button(
+            "Download Monte Carlo Results (CSV)",
+            data=out.to_csv(index=False).encode("utf-8"),
+            file_name="monte_carlo_staffing.csv",
+            mime="text/csv",
         )
 
-    st.subheader("Monte Carlo Results")
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Intervals", f"{len(out)}")
-    c2.metric("Sims / Interval", f"{n_sims}")
-    c3.metric("Scheduled P90 Total", f"{out['scheduled_p90'].sum():.1f}" if "scheduled_p90" in out.columns else "—")
-    c4.metric("Scheduled P95 Total", f"{out['scheduled_p95'].sum():.1f}" if "scheduled_p95" in out.columns else "—")
-
-    st.caption("Percentiles are per-interval. Totals are simple sums across intervals (quick comparison metric).")
-
-    show_cols = [
-        "interval_start",
-        "interval_minutes",
-        "volume",
-        "aht_seconds",
-        "scheduled_mean",
-        "scheduled_p50",
-        "scheduled_p90",
-        "scheduled_p95",
-        "on_phone_mean",
-        "on_phone_p50",
-        "on_phone_p90",
-        "on_phone_p95",
-        "sla_breach_rate",
-        "asa_mean",
-        "occ_mean",
-    ]
-    show_cols = [c for c in show_cols if c in out.columns]
-    st.dataframe(out[show_cols], use_container_width=True)
-
-    st.download_button(
-        "Download Monte Carlo Results (CSV)",
-        data=out.to_csv(index=False).encode("utf-8"),
-        file_name="monte_carlo_staffing.csv",
-        mime="text/csv",
-    )
-
-    with st.expander("Interpretation (how to use these outputs)"):
-        st.markdown(
-            """
+        with st.expander("Interpretation (how to use these outputs)"):
+            st.markdown(
+                """
 - **scheduled_p90 / scheduled_p95**: recommended staffing if you want high-percentile coverage.
 - **sla_breach_rate**: estimated probability of missing the service-level target (only when `target_type=service_level`).
 - **asa_mean** and **occ_mean**: sanity checks to avoid unrealistic utilization.
 """
-        )
+            )
+
+    finally:
+        st.session_state["mc_running"] = False
 
 st.caption(
     "MVP note: This is an uncertainty wrapper around Erlang-C staffing. If you later add Erlang-A, "
