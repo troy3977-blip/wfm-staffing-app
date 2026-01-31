@@ -6,4 +6,6 @@ venv/
 .DS_Store
 .pytest_cache/
 .streamlit/
-*.log
+*.log*.egg-info/
+__pycache__/
+*.pyc

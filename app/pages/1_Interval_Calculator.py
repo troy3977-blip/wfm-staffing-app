@@ -1,65 +1,148 @@
+# app/pages/1_Interval_Calculator.py
+from __future__ import annotations
+
+from datetime import date
+from typing import cast
+
+import pandas as pd
 import streamlit as st
 
-from wfm.staffing import StaffingInputs, compute_required_agents
-
-st.set_page_config(page_title="Interval Calculator", layout="wide")
-st.title("Single Interval Calculator")
-
-with st.sidebar:
-    st.header("Interval Inputs")
-    volume = st.number_input("Volume (contacts offered)", min_value=0.0, value=100.0, step=1.0)
-    aht = st.number_input("AHT (seconds)", min_value=1.0, value=420.0, step=1.0)
-    interval_minutes = st.selectbox("Interval length (minutes)", options=[15, 30, 60], index=0)
-    is_open = st.checkbox("Interval is open", value=True)
-
-    st.divider()
-    st.header("Target")
-    target_type = st.selectbox("Target type", options=["service_level", "asa"], index=0)
-
-    if target_type == "service_level":
-        sl_target = st.slider("Service Level target", min_value=0.50, max_value=0.99, value=0.80, step=0.01)
-        sl_time = st.number_input("Service Level time threshold (seconds)", min_value=0.0, value=20.0, step=1.0)
-        asa_target = 30.0
-    else:
-        asa_target = st.number_input("ASA target (seconds)", min_value=1.0, value=30.0, step=1.0)
-        sl_target = 0.80
-        sl_time = 20.0
-
-    st.divider()
-    st.header("Adjustments / Constraints")
-    shrinkage = st.slider("Shrinkage", min_value=0.0, max_value=0.60, value=0.30, step=0.01)
-
-    use_occ = st.checkbox("Apply occupancy cap", value=True)
-    occupancy_target = st.slider("Occupancy cap", min_value=0.50, max_value=0.95, value=0.85, step=0.01) if use_occ else None
-
-inputs = StaffingInputs(
-    volume=volume,
-    aht_seconds=aht,
-    interval_minutes=int(interval_minutes),
-    is_open=is_open,
-    target_type=target_type,
-    service_level_target=float(sl_target),
-    service_level_time_seconds=float(sl_time),
-    asa_target_seconds=float(asa_target),
-    occupancy_target=float(occupancy_target) if occupancy_target is not None else None,
-    shrinkage=float(shrinkage),
+from wfm.patterns import (
+    PatternType,
+    HoursOfOperation,
+    build_day_intervals,
+    apply_hours_of_operation,
+    build_profile_template,
+    read_intraday_profile_csv,
+    validate_profile_alignment,
+    pattern_weights,
+    allocate_volume_to_intervals,
 )
 
+st.set_page_config(page_title="Interval Calculator", layout="wide")
+st.title("Interval Calculator")
+st.caption(
+    "Build a day of intervals, apply Hours of Operation, apply an intraday pattern, "
+    "and allocate daily volume into interval-level volume."
+)
+
+# -----------------------------
+# Sidebar controls
+# -----------------------------
+with st.sidebar:
+    st.header("Day + Grid")
+
+    # IMPORTANT: This returns either date or tuple[date,...] depending on widget usage.
+    # We force it to a single date for simplicity and to satisfy type-checkers.
+    day_input = st.date_input("Date", value=date.today())
+    if isinstance(day_input, (tuple, list)):
+        day0 = day_input[0]
+    else:
+        day0 = day_input
+
+    interval_minutes = st.selectbox("Interval minutes", [5, 10, 15, 30, 60], index=2)
+
+    st.divider()
+    st.header("Hours of Operation")
+    start_time = st.text_input("Start (HH:MM)", value="09:00")
+    end_time = st.text_input("End (HH:MM)", value="17:00")
+
+    st.divider()
+    st.header("Daily Inputs")
+    daily_volume = st.number_input("Daily Volume", min_value=0, value=1000, step=50)
+    aht_seconds = st.number_input("AHT (seconds)", min_value=1, value=300, step=10)
+
+    st.divider()
+    st.header("Intraday Pattern")
+
+    pattern_str = st.selectbox(
+        "Pattern",
+        ["uniform", "ramp_up_peak_ramp_down", "gaussian_peak", "custom_weights", "profile_csv"],
+        index=0,
+    )
+    pattern = cast(PatternType, pattern_str)
+
+    peak_time: str | None = None
+    if pattern == "gaussian_peak":
+        peak_time = st.text_input("Peak time (HH:MM)", value="13:00")
+
+    profile_df: pd.DataFrame | None = None
+    if pattern == "profile_csv":
+        st.caption("Upload a CSV with columns: time, weight (HH:MM, numeric).")
+        uploaded_profile = st.file_uploader("Upload profile CSV", type=["csv"])
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            if st.button("Build template"):
+                st.session_state["profile_template_df"] = build_profile_template(int(interval_minutes))
+
+        with col_b:
+            if "profile_template_df" in st.session_state:
+                st.download_button(
+                    "Download template CSV",
+                    data=st.session_state["profile_template_df"].to_csv(index=False).encode("utf-8"),
+                    file_name=f"profile_template_{int(interval_minutes)}min.csv",
+                    mime="text/csv",
+                )
+
+        if "profile_template_df" in st.session_state:
+            st.dataframe(st.session_state["profile_template_df"], height=220)
+
+        if uploaded_profile is not None:
+            profile_df = read_intraday_profile_csv(uploaded_profile)
+
+# -----------------------------
+# Build intervals
+# -----------------------------
+st.subheader("Interval Table")
+
+# Convert selected day to Timestamp safely
+day_ts = pd.Timestamp(day0)
+
+hoo = HoursOfOperation(
+    start_time=str(start_time).strip(),
+    end_time=str(end_time).strip(),
+    interval_minutes=int(interval_minutes),
+)
+
+df = build_day_intervals(date=day_ts, interval_minutes=int(interval_minutes))
+df = apply_hours_of_operation(df, hoo)
+df["aht_seconds"] = float(aht_seconds)
+
+# -----------------------------
+# Weights + allocation
+# -----------------------------
 try:
-    result = compute_required_agents(inputs)
+    if pattern == "profile_csv":
+        if profile_df is None:
+            st.warning("Upload a profile CSV to use the profile_csv pattern. Falling back to uniform.")
+            weights = pattern_weights(df, pattern=cast(PatternType, "uniform"))
+        else:
+            validate_profile_alignment(df, profile_df)
+            weights = pattern_weights(df, pattern=cast(PatternType, "profile_csv"), profile_df=profile_df)
+    else:
+        weights = pattern_weights(df, pattern=pattern, peak_time=peak_time)
+
+    df = allocate_volume_to_intervals(
+        df_day=df,
+        daily_volume=float(daily_volume),
+        weights=weights,
+        volume_rounding="round",
+    )
+
 except Exception as e:
-    st.error(f"Error: {e}")
+    st.error(f"Error building intervals: {e}")
     st.stop()
 
-col1, col2, col3 = st.columns(3)
-col1.metric("Offered Load (Erlangs)", f"{result.offered_load_erlangs:.2f}")
-col2.metric("Required On-Phone Agents", f"{result.required_on_phone}")
-col3.metric("Required Scheduled Agents", f"{result.required_scheduled}")
+st.dataframe(df, use_container_width=True)
 
-st.subheader("Achieved performance")
-c1, c2, c3 = st.columns(3)
-c1.metric("Service Level", f"{result.achieved_service_level:.3f}")
-c2.metric("ASA (seconds)", f"{result.achieved_asa_seconds:.1f}")
-c3.metric("Occupancy", f"{result.achieved_occupancy:.3f}")
+# Save for other pages
+st.session_state["intervals_df"] = df
+st.success("Saved to session_state as `intervals_df`")
 
-st.caption("Note: Abandonment is not modeled in Erlang-C MVP. Add Erlang-A later if needed.")
+st.download_button(
+    "Download interval inputs (CSV)",
+    data=df.to_csv(index=False).encode("utf-8"),
+    file_name="interval_inputs.csv",
+    mime="text/csv",
+)

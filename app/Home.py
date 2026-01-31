@@ -1,20 +1,15 @@
 import streamlit as st
 
-st.set_page_config(page_title="WFM Interval Staffing (Erlang-C)", layout="wide")
+st.set_page_config(page_title="WFM Staffing App", layout="wide")
 
-st.title("WFM Interval Staffing (Erlang-C) — MVP")
-st.write(
+st.title("WFM Staffing App")
+st.markdown(
     """
-This app computes **required agents per interval** using an Erlang-C staffing engine.
+Use the pages on the left:
 
-Included:
-- Single Interval Calculator
-- Interval Staffing Table (CSV upload or generate from daily total + pattern)
-- Shrinkage conversion (on-phone → scheduled)
-- Optional occupancy cap
-- Hours-of-operation masking + arrival patterns
-- Custom intraday profile CSV + profile builder
+1. **Interval Calculator** – create/build interval inputs  
+2. **Interval Staffing Table** – compute Erlang-C staffing per interval  
+3. **Monte Carlo Mode** – simulate risk percentiles under uncertainty  
+9. **Methodology** – formulas and assumptions
 """
 )
-
-st.info("Use the left sidebar to navigate to the calculator or the interval table.")
