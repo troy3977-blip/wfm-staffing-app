@@ -10,6 +10,7 @@ from wfm.monte_carlo import (
     MonteCarloConfig,
     run_interval_monte_carlo,
     MAX_SIMS_DEFAULT,
+    MAX_TOTAL_SIMS,
     VolumeDist,
     AHTDist,
 )
@@ -48,8 +49,8 @@ with st.sidebar:
         "Simulations per interval",
         min_value=1,
         max_value=int(MAX_SIMS_DEFAULT),
-        value=100,
-        step=10
+        value=2000,
+        step=100,
         help=f"Hard-capped at {MAX_SIMS_DEFAULT} for production safety.",
     )
     seed = st.number_input("Random seed", min_value=0, value=10, step=1)
@@ -156,6 +157,19 @@ st.dataframe(df, use_container_width=True)
 # Run Monte Carlo
 # -----------------------------
 run = st.button("Run Monte Carlo", type="primary")
+MAX_SIMS_DEFAULT = 150_000  # ensure consistent with wfm.monte_carlo
+n_intervals = len(df)
+
+if n_sims > MAX_N_SIMS:
+    st.error(f"n_sims too high. Max allowed is {MAX_N_SIMS}.")
+    st.stop()
+
+if n_intervals * n_sims > MAX_TOTAL_SIMS:
+    st.error(
+        f"Request too large: intervals({n_intervals}) * sims({n_sims}) = {n_intervals*n_sims:,} "
+        f"exceeds max {MAX_TOTAL_SIMS:,}. Increase interval size or reduce sims."
+    )
+    st.stop()
 
 if run:
     # Apply UI cap (and engine also enforces MAX_SIMS_DEFAULT)

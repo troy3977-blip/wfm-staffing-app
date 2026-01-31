@@ -5,3 +5,4 @@ python-dateutil==2.9.0.post0
 
 [dev]
 pytest==8.3.2
+ruff==0.6.9
