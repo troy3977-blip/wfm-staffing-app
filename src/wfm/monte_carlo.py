@@ -34,7 +34,7 @@ def _df_fingerprint(df: pd.DataFrame) -> str:
 
 @st.cache_data(show_spinner=False, ttl=900)  # 15 min cache
 def _cached_run_mc(
-    df_fingerprint: str,   # included purely to stabilize cache key
+    df_fingerprint: str,  # forces stable cache key when df changes
     df_csv: str,
     cfg_kwargs: dict,
     engine_kwargs: dict,
@@ -64,6 +64,7 @@ Use it to answer questions like:
 - “How sensitive is staffing to AHT variability?”
 """
 )
+
 
 # -----------------------------
 # Sidebar controls (inputs ONLY)
@@ -97,7 +98,6 @@ with st.sidebar:
 
     target_type = cast(TargetType, st.selectbox("Target type", ["service_level", "asa"], index=0))
 
-    # Defaults
     service_level_target = 0.80
     service_level_time_seconds = 60.0
     asa_target_seconds = 30.0
@@ -124,7 +124,7 @@ with st.sidebar:
     if use_occ:
         occupancy_target = st.slider("Occupancy cap", 0.50, 0.98, 0.85, 0.01)
 
-    # Optional: show a tiny cache diagnostic toggle
+    # Optional: only run the cache timing probe when you want it
     show_cache_timing = st.checkbox("Show cache timing (debug)", value=False)
 
 
@@ -244,7 +244,7 @@ if run:
             occupancy_target=float(occupancy_target) if occupancy_target is not None else None,
         )
 
-        # Step 3: cache (correctly indented)
+        # Step 3: cache (FIXED indentation)
         df_csv = df.to_csv(index=False)
         df_key = _df_fingerprint(df)
 
@@ -256,7 +256,7 @@ if run:
                 engine_kwargs=engine_kwargs,
             )
 
-        # Optional debug: measure cached speed without running twice every time
+        # Optional cache timing probe (doesn't run unless enabled)
         if show_cache_timing:
             t0 = time.time()
             _ = _cached_run_mc(
@@ -266,14 +266,14 @@ if run:
                 engine_kwargs=engine_kwargs,
             )
             elapsed = time.time() - t0
-            st.caption(f"Cache probe: {elapsed:.3f}s (near-zero means cached)")
-
-        st.session_state["mc_results_df"] = out
+            st.caption(f"Cache probe: {elapsed:.3f}s (near-zero means cached).")
 
         if "interval_start" in out.columns and "scheduled_p90" in out.columns:
             st.session_state["mc_p90_recommendations"] = out[["interval_start", "scheduled_p90"]].rename(
                 columns={"scheduled_p90": "recommended_scheduled_p90"}
             )
+
+        st.session_state["mc_results_df"] = out
 
         # -----------------------------
         # Display results
