@@ -54,7 +54,6 @@ Simulates **N scenarios per interval** to quantify uncertainty in staffing outco
   - Lognormal
 
 #### What you get per interval:
-
 - Mean staffing
 - P50 / P90 / P95 staffing recommendations
 - Mean occupancy
@@ -62,9 +61,9 @@ Simulates **N scenarios per interval** to quantify uncertainty in staffing outco
 - **Probability of missing service targets** (SLA breach rate)
 
 #### Why this matters:
-
 Instead of asking *“What staffing do I need?”*  
 You can now ask:
+
 - “How many agents do I need at **P90 demand**?”
 - “What is the **risk of missing 80/60** with today’s plan?”
 - “How sensitive is staffing to AHT volatility?”
@@ -136,5 +135,4 @@ Designed to be safe for interactive use:
 ---
 
 ## 📜 Disclaimer
-
 This tool demonstrates **industry-standard staffing methodologies** for educational and analytical purposes. Production deployment should include domain-specific validation and governance.
