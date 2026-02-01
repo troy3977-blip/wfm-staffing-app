@@ -78,19 +78,52 @@ Designed to be safe for interactive use:
 - **Per-session rate limiting**
 - UI locking to prevent concurrent runs
 
+---
+
 ## 🧠 Architecture Overview
-  app/
-  ├─ Home.py
-  ├─ pages/
-  │ ├─ 1_Interval_Calculator.py
-  │ ├─ 2_Interval_Staffing_Table.py
-  │ ├─ 3_Monte_Carlo_Mode.py
-  │ └─ 9_Methodology.py
-  src/
-  ├─ wfm/
-  │ ├─ erlangc.py # Erlang-C math
-  │ ├─ staffing.py # Deterministic staffing engine
-  │ ├─ monte_carlo.py # Monte Carlo simulation engine
-  │ ├─ patterns.py # Interval pattern + allocation logic
-  │ └─ validation.py
-  tests/
+# - app/
+# - ├─ Home.py
+#   - ├─ pages/
+#     - │ ├─ 1_Interval_Calculator.py
+#     - │ ├─ 2_Interval_Staffing_Table.py
+#     - │ ├─ 3_Monte_Carlo_Mode.py
+#     - │ └─ 9_Methodology.py
+# - src/
+#   - ├─ wfm/
+#     - │ ├─ erlangc.py # Erlang-C math
+#     - │ ├─ staffing.py # Deterministic staffing engine
+#     - │ ├─ monte_carlo.py # Monte Carlo simulation engine
+#     - │ ├─ patterns.py # Interval pattern + allocation logic
+#     - │ └─ validation.py
+# - tests/
+
+---
+
+## 🧪 Testing
+- Unit tests cover:
+  - Erlang-C math
+  - Monte Carlo caps and config
+  - Interval validation
+- All tests pass under Python 3.12.
+
+---
+
+## 🚀 Roadmap
+- Erlang-A (abandonment-aware) modeling
+- Multi-skill routing
+- Scenario comparison dashboards
+- Export to Excel / Power BI
+- Optimization (cost vs service trade-offs)
+
+---
+
+## 🎯 Intended Audience
+- Workforce Management analysts
+- Forecasting & capacity planning teams
+- Analytics engineers
+- Hiring managers evaluating applied modeling skills
+
+---
+
+## 📜 Disclaimer
+This tool demonstrates **industry-standard staffing methodologies** for educational and analytical purposes. Production deployment should include domain-specific validation and governance.
