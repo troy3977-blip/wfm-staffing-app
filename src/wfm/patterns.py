@@ -10,7 +10,6 @@ import numpy as np
 import pandas as pd
 from pandas.api.types import is_datetime64_any_dtype
 
-
 PatternType: TypeAlias = Literal[
     "uniform",
     "ramp_up_peak_ramp_down",
@@ -28,15 +27,14 @@ class HoursOfOperation:
     end_time is end-exclusive.
 
     Supports overnight windows:
-      start_time="22:00", end_time="06:00"
-      => open from 22:00..24:00 and 00:00..06:00.
+      start_time="22:00", end_time="06:00" means open from 22:00..24:00 and 00:00..06:00.
     """
     start_time: str
     end_time: str
     interval_minutes: int
 
 
-PROFILE_REQUIRED_COLUMNS = ["time", "weight"]  # time as HH:MM, weight numeric
+PROFILE_REQUIRED_COLUMNS = ["time", "weight"]  # time as HH:MM, weight as numeric
 
 
 # -----------------------------
@@ -47,12 +45,13 @@ def _time_to_minutes(t: str) -> int:
     return int(hh) * 60 + int(mm)
 
 
-def _ensure_datetime_series(df: pd.DataFrame, col: str) -> pd.Series[pd.Timestamp]:
+def _ensure_datetime_series(df: pd.DataFrame, col: str) -> pd.Series:
     """
-    Returns df[col] coerced to datetime64[ns] as a *typed* Series[pd.Timestamp].
+    Returns a datetime64 Series for df[col] (coerced), raising if invalid.
 
-    This is the key change: returning a typed series makes Pylance recognize
-    s.dt.hour / s.dt.minute / s.dt.strftime.
+    IMPORTANT:
+    - Do NOT use pd.Series[...]: it can raise at runtime ("Series is not subscriptable")
+      in some pandas/type-stub combos.
     """
     if col not in df.columns:
         raise ValueError(f"Missing required column: {col}")
@@ -62,15 +61,17 @@ def _ensure_datetime_series(df: pd.DataFrame, col: str) -> pd.Series[pd.Timestam
         bad_rows = df.index[s.isna()].tolist()[:10]
         raise ValueError(f"Column '{col}' has invalid datetime values. Example bad rows: {bad_rows}")
 
-    # runtime check + type narrowing hook
-    assert is_datetime64_any_dtype(s), f"Column '{col}' is not datetime64 after conversion"
+    # Runtime dtype check (and helps type checkers)
+    if not is_datetime64_any_dtype(s):
+        raise ValueError(f"Column '{col}' is not datetime64 after conversion")
 
-    # Pylance-friendly cast
-    return cast(pd.Series[pd.Timestamp], s)
+    return cast(pd.Series, s)
 
 
 def _normalize_day_df(df: pd.DataFrame) -> pd.DataFrame:
-    """Returns a copy with interval_start normalized to datetime64[ns]."""
+    """
+    Ensures interval_start is datetime64 and returns a copy with normalized column.
+    """
     out = df.copy()
     out["interval_start"] = _ensure_datetime_series(out, "interval_start")
     return out
@@ -79,7 +80,7 @@ def _normalize_day_df(df: pd.DataFrame) -> pd.DataFrame:
 # -----------------------------
 # Day grid + Hours of Operation
 # -----------------------------
-def build_day_intervals(date_ts: pd.Timestamp, interval_minutes: int) -> pd.DataFrame:
+def build_day_intervals(day: pd.Timestamp, interval_minutes: int) -> pd.DataFrame:
     """
     Returns a full-day interval grid:
       00:00 inclusive to 24:00 exclusive.
@@ -87,27 +88,31 @@ def build_day_intervals(date_ts: pd.Timestamp, interval_minutes: int) -> pd.Data
     if interval_minutes <= 0 or (1440 % interval_minutes) != 0:
         raise ValueError("interval_minutes must be > 0 and divide 1440 evenly (e.g., 5, 10, 15, 30, 60).")
 
-    start = pd.Timestamp(date_ts.date())
+    start = pd.Timestamp(day.date())
     times = pd.date_range(start=start, periods=int(1440 / interval_minutes), freq=f"{interval_minutes}min")
     return pd.DataFrame({"interval_start": times, "interval_minutes": int(interval_minutes)})
 
 
 def apply_hours_of_operation(df: pd.DataFrame, hoo: HoursOfOperation) -> pd.DataFrame:
     """
-    Adds/overwrites is_open based on hours-of-operation.
-    Handles overnight windows (e.g., 22:00 -> 06:00).
+    Adds/overwrites is_open based on the hours-of-operation window.
+    Handles overnight windows (e.g. 22:00 -> 06:00).
     """
     out = _normalize_day_df(df)
 
     start_m = _time_to_minutes(hoo.start_time)
     end_m = _time_to_minutes(hoo.end_time)
 
-    s = cast(pd.Series[pd.Timestamp], out["interval_start"])
+    s = cast(pd.Series, out["interval_start"])
+    if not is_datetime64_any_dtype(s):
+        raise ValueError("interval_start must be datetime64 for hours-of-operation logic")
+
     mins = s.dt.hour * 60 + s.dt.minute
 
     if start_m < end_m:
         out["is_open"] = (mins >= start_m) & (mins < end_m)
     else:
+        # overnight window
         out["is_open"] = (mins >= start_m) | (mins < end_m)
 
     return out
@@ -119,17 +124,24 @@ def apply_hours_of_operation(df: pd.DataFrame, hoo: HoursOfOperation) -> pd.Data
 def intraday_time_grid(interval_minutes: int) -> pd.DataFrame:
     """
     Returns a full-day HH:MM grid for the chosen interval length.
-    Example: 15-min => 96 rows from 00:00..23:45
+    Example: 15-min -> 96 rows: 00:00 ... 23:45
     """
     if interval_minutes <= 0 or (1440 % interval_minutes) != 0:
         raise ValueError("interval_minutes must be > 0 and divide 1440 evenly (e.g., 5, 10, 15, 30, 60).")
 
-    times = pd.date_range("2000-01-01 00:00:00", periods=int(1440 / interval_minutes), freq=f"{interval_minutes}min")
+    times = pd.date_range(
+        "2000-01-01 00:00:00",
+        periods=int(1440 / interval_minutes),
+        freq=f"{interval_minutes}min",
+    )
     return pd.DataFrame({"time": times.strftime("%H:%M")})
 
 
 def build_profile_template(interval_minutes: int, default_weight: float = 1.0) -> pd.DataFrame:
-    """Builds a template profile DataFrame: time, weight."""
+    """
+    Builds a template profile DataFrame with all times for the chosen interval length.
+    Users can edit weights and re-upload.
+    """
     if default_weight < 0:
         raise ValueError("default_weight must be >= 0")
 
@@ -180,14 +192,17 @@ def read_intraday_profile_csv(file: Union[str, os.PathLike, IO[bytes], IO[str]])
 
 def weights_from_intraday_profile(df_day: pd.DataFrame, profile_df: pd.DataFrame) -> np.ndarray:
     """
-    Maps profile weights onto df_day intervals by HH:MM.
+    Maps profile weights onto df_day intervals based on time-of-day HH:MM.
     Missing times default to 0.
     Closed intervals remain 0 if df_day includes is_open.
     """
     df_day = _normalize_day_df(df_day)
-    s = cast(pd.Series[pd.Timestamp], df_day["interval_start"])
+    s = cast(pd.Series, df_day["interval_start"])
+    if not is_datetime64_any_dtype(s):
+        raise ValueError("interval_start must be datetime64 to map profile weights")
 
     out_w = np.zeros(len(df_day), dtype=float)
+
     prof_map = dict(zip(profile_df["time"].tolist(), profile_df["weight"].tolist()))
     times = s.dt.strftime("%H:%M").tolist()
 
@@ -208,7 +223,9 @@ def validate_profile_alignment(df_day: pd.DataFrame, profile_df: pd.DataFrame) -
     - Enforced: profile must include all open interval times (prevents silent 0 allocations).
     """
     df_day = _normalize_day_df(df_day)
-    s = cast(pd.Series[pd.Timestamp], df_day["interval_start"])
+    s = cast(pd.Series, df_day["interval_start"])
+    if not is_datetime64_any_dtype(s):
+        raise ValueError("interval_start must be datetime64 to validate profile alignment")
 
     day_times = set(s.dt.strftime("%H:%M").tolist())
     prof_times = set(profile_df["time"].tolist())
@@ -238,18 +255,20 @@ def pattern_weights(
     df_day: pd.DataFrame,
     pattern: PatternType,
     *,
-    peak_time: Optional[str] = None,
-    ramp_fraction: float = 0.25,
-    sigma_fraction: float = 0.18,
+    peak_time: Optional[str] = None,            # for gaussian_peak
+    ramp_fraction: float = 0.25,                # for ramp_up_peak_ramp_down
+    sigma_fraction: float = 0.18,               # for gaussian_peak
     custom_weights: Optional[List[float]] = None,
-    profile_df: Optional[pd.DataFrame] = None,
+    profile_df: Optional[pd.DataFrame] = None,  # for profile_csv
 ) -> np.ndarray:
     """
     Returns weights aligned to df_day rows (one day of intervals).
-    Weights are nonnegative and are set to 0 for closed intervals if is_open exists.
+    Weights are nonnegative and will be zero for closed intervals if is_open is present.
     """
     df_day = _normalize_day_df(df_day)
-    s = cast(pd.Series[pd.Timestamp], df_day["interval_start"])
+    s = cast(pd.Series, df_day["interval_start"])
+    if not is_datetime64_any_dtype(s):
+        raise ValueError("interval_start must be datetime64 for pattern computations")
 
     if "is_open" in df_day.columns:
         open_mask = df_day["is_open"].astype(bool).to_numpy()
@@ -290,7 +309,7 @@ def pattern_weights(
             peak_idx = idx_open[len(idx_open) // 2]
         else:
             peak_m = _time_to_minutes(peak_time)
-            dist = mins.to_numpy(dtype=float) - float(peak_m)
+            dist = (mins.to_numpy(dtype=float) - float(peak_m))
             dist[~open_mask] = 1e9
             peak_idx = int(np.argmin(np.abs(dist)))
 
@@ -330,7 +349,7 @@ def allocate_volume_to_intervals(
     volume_rounding: Literal["none", "round"] = "round",
 ) -> pd.DataFrame:
     """
-    Allocates daily_volume into interval volumes using weights.
+    Allocates daily_volume into interval-level volumes using weights.
     If weights sum to 0, volumes are 0.
 
     volume_rounding="round" uses largest remainder method to preserve totals.

@@ -1,120 +1,96 @@
-Workforce Management Staffing Optimizer (WFM Staffing App)
+# WFM Staffing App (Erlang-C + Monte Carlo Risk Modeling)
 
-Production-ready workforce staffing engine and scenario modeling web application built with Python, Streamlit, and Azure.
-Designed to operationalize Erlang-based contact-center staffing models with modern CI/CD, cloud deployment, and analytics-grade rigor.
+A production-grade Workforce Management (WFM) staffing application that combines **deterministic Erlang-C staffing** with **Monte Carlo simulation** to quantify staffing risk under volume and AHT uncertainty.
 
-🔍 Problem Statement
-Contact-center staffing decisions are often made using:
-- opaque spreadsheets,
-- manual Erlang calculators,
-- inconsistent assumptions across teams.
+Built for contact-center analysts, planners, and data leaders who want **defensible, risk-aware staffing decisions** rather than single-point estimates.
 
-This leads to:
-- SLA misses,
-- over-staffing cost,
-- slow scenario iteration during planning cycles.
-This project transforms classical WFM math into a deployable, testable, and auditable web application.
+---
 
-🚀 Solution Overview
-The WFM Staffing App is a cloud-hosted analytics application that allows planners and analysts to:
-- Compute interval-level staffing requirements using Erlang-C–based models
-- Model service level (SL/ASA) tradeoffs
-- Apply shrinkage and occupancy constraints
-- Compare scenarios side-by-side
-- Export results for downstream planning and reporting
-The system separates core mathematical logic from the UI layer, enabling testing, reuse, and future extensions (simulation, optimization, multi-skill routing).
+## 🔍 Key Capabilities
 
-🧠 Modeling Approach
-Core Concepts
-- Poisson arrivals
-- Exponential service times
-- Erlang-C queuing formulation
-- Interval-based staffing
+### 1. Interval Calculator
+- Builds a clean **interval-level input table**:
+  - Open / closed intervals
+  - Volume allocation
+  - Average Handle Time (AHT)
+- Supports **intraday patterns**:
+  - Uniform
+  - Ramp-up / peak / ramp-down
+  - Gaussian peak
+  - Custom weights
+  - Profile CSV uploads
+- Enforces strict validation (datetime safety, interval alignment).
 
-Inputs
-- Call volume
-- Average handle time (AHT)
-- Interval length
-- Target service level (e.g. 80/60)
-- Shrinkage
-- Occupancy constraints
+---
 
-Outputs
-- Required agents (FTE)
-- Offered load
-- Probability of wait
-- ASA / SLA feasibility
-All calculations are implemented in pure Python, independently testable from the UI.
+### 2. Deterministic Staffing (Erlang-C)
+- Computes required staffing per interval using:
+  - Offered load (Erlangs)
+  - Service Level targets (e.g., 80/60)
+  - ASA targets
+  - Shrinkage
+  - Occupancy caps
+- Produces:
+  - Required on-phone agents
+  - Required scheduled agents
+  - Achieved service metrics
 
-🖥 Application Features
-- Interactive Streamlit UI
-- Executive-friendly results summary
-- Scenario comparison (A/B modeling)
-- Exportable results (CSV)
-- Explicit assumptions documentation
-- Health-checked Azure deployment
+---
 
-🏗 Architecture
-High-level design
-User
- └─▶ Azure App Service (Python / Streamlit)
-       ├─ Streamlit UI layer
-       ├─ Staffing engine (pure Python)
-       ├─ Unit tests
-       └─ Application Insights telemetry
+### 3. Monte Carlo Mode (Risk-Aware Staffing)
+Simulates **N scenarios per interval** to quantify uncertainty in staffing outcomes.
 
-Deployment
-- Azure App Service (Linux, Python 3.11)
-- GitHub Actions CI/CD
-- OIDC authentication (no stored secrets)
-- Zip Deploy artifact strategy
+#### What is simulated?
+- **Volume uncertainty**
+  - Poisson
+  - Normal (CV-based)
+  - Lognormal (CV-based)
+- **AHT uncertainty**
+  - Normal
+  - Lognormal
 
-🔐 Security & DevOps
-- OIDC-based GitHub → Azure authentication (no publish profiles)
-- Principle of least privilege (managed identity / app registration)
-- CI/CD pipeline with:
-  - dependency install
-  - test execution
-  - build artifact creation
-  - automated deployment
-- Application Insights enabled for observability
+#### What you get per interval:
+- Mean staffing
+- P50 / P90 / P95 staffing recommendations
+- Mean occupancy
+- Mean ASA
+- **Probability of missing service targets** (SLA breach rate)
 
-🧪 Testing & Quality
-- Unit-tested staffing logic
-- Deterministic outputs for identical inputs
-- Edge-case handling (zero volume, extreme shrinkage)
-- Reproducible builds
+#### Why this matters:
+Instead of asking *“What staffing do I need?”*  
+You can now ask:
+- “How many agents do I need at **P90 demand**?”
+- “What is the **risk of missing 80/60** with today’s plan?”
+- “How sensitive is staffing to AHT volatility?”
 
-📦 Repository Structure
-wfm-staffing-app/
-  app/              # Streamlit UI
-  staffing/         # Core staffing engine
-  tests/            # Unit tests
-  docs/             # Architecture & assumptions
-  .github/workflows # CI/CD
-  requirements.txt
-  README.md
+---
 
-🧩 Example Use Cases
-Weekly staffing planning
-- Scenario modeling for promotions or seasonality
-- SLA feasibility analysis
-- Training tool for WFM analysts
-- Foundation for optimization or simulation engines
+## ⚙️ Performance & Safety Controls
 
-🛣 Roadmap
-Planned enhancements:
-- Multi-skill routing
-- Monte Carlo simulation mode
-- Cost-based optimization (min cost vs SLA)
-- API layer for enterprise integration
-- Role-based access control
+Designed to be safe for interactive use:
 
-🧑‍💼 About This Project
-This project was built as a portfolio-grade demonstration of:
-- workforce analytics expertise,
-- production cloud deployment,
-- CI/CD best practices,
-- and applied operations research.
+- **Hard simulation caps**
+  - `MAX_SIMS_DEFAULT = 1000` (per interval)
+  - `MAX_TOTAL_SIMS = 200_000` (intervals × sims)
+- **Deterministic RNG seeding** for reproducibility
+- **Stable dataframe fingerprinting** for reliable caching
+- **Streamlit cache** with TTL for near-instant reruns
+- **Per-session rate limiting**
+- UI locking to prevent concurrent runs
 
-It is intentionally designed to mirror how modern analytics products are built and operated in enterprise environments.
+## 🧠 Architecture Overview
+  app/
+  ├─ Home.py
+  ├─ pages/
+  │ ├─ 1_Interval_Calculator.py
+  │ ├─ 2_Interval_Staffing_Table.py
+  │ ├─ 3_Monte_Carlo_Mode.py
+  │ └─ 9_Methodology.py
+  src/
+  ├─ wfm/
+  │ ├─ erlangc.py # Erlang-C math
+  │ ├─ staffing.py # Deterministic staffing engine
+  │ ├─ monte_carlo.py # Monte Carlo simulation engine
+  │ ├─ patterns.py # Interval pattern + allocation logic
+  │ └─ validation.py
+  tests/
