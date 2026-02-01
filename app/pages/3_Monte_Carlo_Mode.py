@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import time
+from io import StringIO
 from typing import cast
 
 import pandas as pd
@@ -20,11 +21,13 @@ from wfm.staffing import TargetType
 
 
 # -----------------------------
-# Helpers (cache + safety)
+# Helpers (cache key)
 # -----------------------------
-from io import StringIO
-
 def _df_fingerprint(df: pd.DataFrame) -> str:
+    """
+    Stable fingerprint for interval inputs.
+    Sort + reset index so equivalent data hashes the same.
+    """
     tmp = df.copy()
     if "interval_start" in tmp.columns:
         tmp = tmp.sort_values("interval_start")
@@ -32,9 +35,10 @@ def _df_fingerprint(df: pd.DataFrame) -> str:
     b = tmp.to_csv(index=False).encode("utf-8")
     return hashlib.sha256(b).hexdigest()
 
-@st.cache_data(show_spinner=False, ttl=900)
+
+@st.cache_data(show_spinner=False, ttl=900)  # 15 min
 def _cached_run_mc(
-    df_fingerprint: str,   # <-- forces stable key
+    df_fingerprint: str,   # included to force stable cache key
     df_csv: str,
     cfg_kwargs: dict,
     engine_kwargs: dict,
@@ -66,7 +70,7 @@ Use it to answer questions like:
 )
 
 # -----------------------------
-# Sidebar controls (inputs ONLY)
+# Sidebar controls (ALL inputs created here)
 # -----------------------------
 with st.sidebar:
     st.header("Simulation Controls")
@@ -77,9 +81,13 @@ with st.sidebar:
         max_value=int(MAX_SIMS_DEFAULT),
         value=min(1000, int(MAX_SIMS_DEFAULT)),
         step=100,
-        help=f"Hard-capped at {MAX_SIMS_DEFAULT} for production safety.",
+        help=f"Hard-capped at {MAX_SIMS_DEFAULT} (engine safety cap).",
     )
     seed = st.number_input("Random seed", min_value=0, value=10, step=1)
+
+    if st.button("Clear Monte Carlo cache"):
+        st.cache_data.clear()
+        st.success("Cache cleared.")
 
     st.divider()
     st.subheader("Uncertainty Model")
@@ -97,13 +105,10 @@ with st.sidebar:
 
     target_type = cast(TargetType, st.selectbox("Target type", ["service_level", "asa"], index=0))
 
-    service_level_target = 0.80
-    service_level_time_seconds = 60.0
-    asa_target_seconds = 30.0
-
-    if st.sidebar.button("Clear Monte Carlo cache"):
-        st.cache_data.clear()
-        st.sidebar.success("Cache cleared.")
+    # defaults (always defined)
+    service_level_target: float = 0.80
+    service_level_time_seconds: float = 60.0
+    asa_target_seconds: float = 30.0
 
     if target_type == "service_level":
         service_level_target = st.slider("Service Level target", 0.50, 0.99, 0.80, 0.01)
@@ -122,12 +127,13 @@ with st.sidebar:
     occupancy_target = None
     if use_occ:
         occupancy_target = st.slider("Occupancy cap", 0.50, 0.98, 0.85, 0.01)
-     
+
+
 # -----------------------------
 # Load interval data
 # -----------------------------
 st.subheader("Interval Inputs")
-st.caption("Preferred: computed from your Interval Staffing Table page via session_state. Fallback: upload CSV.")
+st.caption("Preferred: computed from Interval Staffing Table via session_state. Fallback: upload CSV.")
 
 df: pd.DataFrame | None = None
 
@@ -177,12 +183,11 @@ except Exception as e:
 st.dataframe(df, use_container_width=True)
 
 # -----------------------------
-# Safety controls (Steps 2,4,5)
+# Safety controls (cooldown + run caps + UI lock)
 # -----------------------------
 if "mc_running" not in st.session_state:
     st.session_state["mc_running"] = False
 
-# Simple per-session rate limiting (Step 5)
 COOLDOWN_SECONDS = 10
 MAX_RUNS_PER_SESSION = 20
 
@@ -198,23 +203,23 @@ if run:
         st.stop()
 
     if now - last < COOLDOWN_SECONDS:
-        st.warning(f"Please wait {int(COOLDOWN_SECONDS - (now - last))}s before running again.")
+        wait_s = int(COOLDOWN_SECONDS - (now - last))
+        st.warning(f"Please wait {wait_s}s before running again.")
         st.stop()
 
-    # lock UI (Step 4)
     st.session_state["mc_running"] = True
     st.session_state["mc_last_run"] = now
     st.session_state["mc_run_count"] = runs + 1
 
     try:
-        # Step 2: hard caps
+        # Hard caps (1000 / 200K)
         n_sims = int(min(int(n_sims_ui), int(MAX_SIMS_DEFAULT)))
         n_intervals = int(len(df))
         total_work = n_intervals * n_sims
 
         if total_work > int(MAX_TOTAL_SIMS):
             st.error(
-                f"Request too large: intervals({n_intervals}) * sims({n_sims}) = {total_work:,} "
+                f"Request too large: intervals({n_intervals}) × sims({n_sims}) = {total_work:,} "
                 f"exceeds max {MAX_TOTAL_SIMS:,}. Increase interval size or reduce sims."
             )
             st.stop()
@@ -239,33 +244,28 @@ if run:
             occupancy_target=float(occupancy_target) if occupancy_target is not None else None,
         )
 
-        # Step 3: cache
-df_csv = df.to_csv(index=False)
-df_key = _df_fingerprint(df)
+        df_csv = df.to_csv(index=False)
+        df_key = _df_fingerprint(df)
 
-out = _cached_run_mc(
-    df_fingerprint=df_key,
-    df_csv=df_csv,
-    cfg_kwargs=cfg_kwargs,
-    engine_kwargs=engine_kwargs,
-)
+        with st.spinner("Simulating..."):
+            t0 = time.time()
+            out = _cached_run_mc(
+                df_fingerprint=df_key,
+                df_csv=df_csv,
+                cfg_kwargs=cfg_kwargs,
+                engine_kwargs=engine_kwargs,
+            )
+            elapsed = time.time() - t0
 
-t0 = time.time()
-out = _cached_run_mc(
-    df_fingerprint=df_key,
-    df_csv=df_csv,
-    cfg_kwargs=cfg_kwargs,
-    engine_kwargs=engine_kwargs,
-)
+        st.caption(f"Monte Carlo returned in {elapsed:.2f}s (near-zero suggests cached).")
 
-elapsed = time.time() - t0
-st.caption(f"Monte Carlo returned in {elapsed:.2f}s (near-zero means cached).")
-
+        # Store for other pages / export
+        st.session_state["mc_results_df"] = out
         if "interval_start" in out.columns and "scheduled_p90" in out.columns:
             st.session_state["mc_p90_recommendations"] = out[["interval_start", "scheduled_p90"]].rename(
                 columns={"scheduled_p90": "recommended_scheduled_p90"}
-            )  
-          
+            )
+
         # -----------------------------
         # Display results
         # -----------------------------
@@ -319,6 +319,6 @@ st.caption(f"Monte Carlo returned in {elapsed:.2f}s (near-zero means cached).")
         st.session_state["mc_running"] = False
 
 st.caption(
-    "MVP note: This is an uncertainty wrapper around Erlang-C staffing. If you later add Erlang-A, "
-    "breach rates become more realistic under abandonment."
+    "MVP note: This is an uncertainty wrapper around Erlang-C staffing. "
+    "If you later add Erlang-A, breach rates become more realistic under abandonment."
 )

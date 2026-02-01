@@ -17,8 +17,8 @@ VolumeDist: TypeAlias = Literal["poisson", "normal", "lognormal"]
 AHTDist: TypeAlias = Literal["normal", "lognormal"]
 
 # UI / safety caps (used by app; safe to import in tests too)
-MAX_SIMS_DEFAULT: int = 2000
-MAX_TOTAL_SIMS: int = 150_000
+MAX_SIMS_DEFAULT: int = 1000
+MAX_TOTAL_SIMS: int = 200_000
 
 
 # -----------------------------

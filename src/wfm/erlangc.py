@@ -65,6 +65,11 @@ def asa_erlang_c(a: float, n: int, aht_seconds: float) -> float:
     pw = _erlang_c_wait_probability(a, n)
     return float(pw) * float(aht_seconds) / float(n - a)
 
+def test_monte_carlo_simulation_limits():
+    from wfm.monte_carlo import MAX_SIMS_DEFAULT, MAX_TOTAL_SIMS
+
+    assert MAX_SIMS_DEFAULT == 1000
+    assert MAX_TOTAL_SIMS == 200_000
 
 def service_level_erlang_c(a: float, n: int, aht_seconds: float, target_answer_time_seconds: float) -> float:
     """
