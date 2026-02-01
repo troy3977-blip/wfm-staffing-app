@@ -3,4 +3,11 @@ pandas==2.2.2
 numpy==2.0.1
 python-dateutil==2.9.0.post0
 pytest==8.3.2
+scipy
+plotly
+python-dotenv
+azure-identity
+azure-keyvault-secrets
+pyodbc
+sqlalchemy
 -e .
