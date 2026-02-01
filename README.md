@@ -9,6 +9,7 @@ Built for contact-center analysts, planners, and data leaders who want **defensi
 ## 🔍 Key Capabilities
 
 ### 1. Interval Calculator
+
 - Builds a clean **interval-level input table**:
   - Open / closed intervals
   - Volume allocation
@@ -24,6 +25,7 @@ Built for contact-center analysts, planners, and data leaders who want **defensi
 ---
 
 ### 2. Deterministic Staffing (Erlang-C)
+
 - Computes required staffing per interval using:
   - Offered load (Erlangs)
   - Service Level targets (e.g., 80/60)
@@ -38,9 +40,11 @@ Built for contact-center analysts, planners, and data leaders who want **defensi
 ---
 
 ### 3. Monte Carlo Mode (Risk-Aware Staffing)
+
 Simulates **N scenarios per interval** to quantify uncertainty in staffing outcomes.
 
 #### What is simulated?
+
 - **Volume uncertainty**
   - Poisson
   - Normal (CV-based)
@@ -50,6 +54,7 @@ Simulates **N scenarios per interval** to quantify uncertainty in staffing outco
   - Lognormal
 
 #### What you get per interval:
+
 - Mean staffing
 - P50 / P90 / P95 staffing recommendations
 - Mean occupancy
@@ -57,6 +62,7 @@ Simulates **N scenarios per interval** to quantify uncertainty in staffing outco
 - **Probability of missing service targets** (SLA breach rate)
 
 #### Why this matters:
+
 Instead of asking *“What staffing do I need?”*  
 You can now ask:
 - “How many agents do I need at **P90 demand**?”
@@ -81,25 +87,27 @@ Designed to be safe for interactive use:
 ---
 
 ## 🧠 Architecture Overview
-# - app/
-# - ├─ Home.py
-#   - ├─ pages/
-#     - │ ├─ 1_Interval_Calculator.py
-#     - │ ├─ 2_Interval_Staffing_Table.py
-#     - │ ├─ 3_Monte_Carlo_Mode.py
-#     - │ └─ 9_Methodology.py
-# - src/
-#   - ├─ wfm/
-#     - │ ├─ erlangc.py # Erlang-C math
-#     - │ ├─ staffing.py # Deterministic staffing engine
-#     - │ ├─ monte_carlo.py # Monte Carlo simulation engine
-#     - │ ├─ patterns.py # Interval pattern + allocation logic
-#     - │ └─ validation.py
-# - tests/
+
+- app/
+- ├─ Home.py
+  - ├─ pages/
+    - │ ├─ 1_Interval_Calculator.py
+    - │ ├─ 2_Interval_Staffing_Table.py
+    - │ ├─ 3_Monte_Carlo_Mode.py
+    - │ └─ 9_Methodology.py
+- src/
+  - ├─ wfm/
+    - │ ├─ erlangc.py # Erlang-C math
+    - │ ├─ staffing.py # Deterministic staffing engine
+    - │ ├─ monte_carlo.py # Monte Carlo simulation engine
+    - │ ├─ patterns.py # Interval pattern + allocation logic
+    - │ └─ validation.py
+- tests/
 
 ---
 
 ## 🧪 Testing
+
 - Unit tests cover:
   - Erlang-C math
   - Monte Carlo caps and config
@@ -109,6 +117,7 @@ Designed to be safe for interactive use:
 ---
 
 ## 🚀 Roadmap
+
 - Erlang-A (abandonment-aware) modeling
 - Multi-skill routing
 - Scenario comparison dashboards
@@ -118,6 +127,7 @@ Designed to be safe for interactive use:
 ---
 
 ## 🎯 Intended Audience
+
 - Workforce Management analysts
 - Forecasting & capacity planning teams
 - Analytics engineers
@@ -126,4 +136,5 @@ Designed to be safe for interactive use:
 ---
 
 ## 📜 Disclaimer
+
 This tool demonstrates **industry-standard staffing methodologies** for educational and analytical purposes. Production deployment should include domain-specific validation and governance.
